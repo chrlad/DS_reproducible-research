@@ -1,0 +1,136 @@
+---
+title: "Analysing severe weather events from NOAA Database"
+author: "Christian"
+date: "17/3/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.  
+The following report tries to answer 2 important questions in that regard:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+
+## Data Processing
+
+### Importing the data
+The data used for this analysis is downloaded from (https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
+In the following code I assume the data has been downloaded and stored in the project reopsitory.
+
+import libraries and Download the data:
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+url <- 'https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2'
+download.file(url, destfile = 'storm_data.csv.bz2')
+data <- read.csv('storm_data.csv.bz2', header = TRUE)
+```
+In order to see the data structure we will examine it a bit
+
+```{r}
+str(data)
+```
+Looking at the documentation from, it seems the columns we are interested in are the 'PROPDMG' and 'CROPDMG' columns, since they describe the economic cost of events. But they don't represent the actual value, since the 'PROPDMGEXP' and 'CROPDMGEXP' columns contains the factor to multiply on the values.  We need to align the different rows, so we wil make the factor columns lowercase, apply the a factorlogic and multiply the columns together and 
+
+
+```{r}
+#Making the al lowercase
+data$PROPDMGEXP <- tolower(data$PROPDMGEXP)
+data$CROPDMGEXP <- tolower(data$CROPDMGEXP)
+
+#Creating the multiplication factor for PROPDMG
+data$prop_factor <- 1 # default one, so we only have to translate the actual fctors
+data$prop_factor[data$PROPDMGEXP == "h" || data$PROPDMGEXP == "2"] <- 10^2
+data$prop_factor[data$PROPDMGEXP == "k" || data$PROPDMGEXP == "3"] <- 10^3
+data$prop_factor[data$PROPDMGEXP == "4"] <- 10^4
+data$prop_factor[data$PROPDMGEXP == "5"] <- 10^5
+data$prop_factor[data$PROPDMGEXP == "m" || data$PROPDMGEXP == "6"] <- 10^6
+data$prop_factor[data$PROPDMGEXP == "7"] <- 10^7
+data$prop_factor[data$PROPDMGEXP == "8"] <- 10^8
+data$prop_factor[data$PROPDMGEXP == "b"] <- 10^9
+
+#Creating the multiplication factor for CROPDMG
+data$crop_factor <- 1 # default one, so we only have to translate the actual fctors
+data$crop_factor[data$CROPDMGEXP == "2"] <- 10^2
+data$crop_factor[data$CROPDMGEXP == "k"] <- 10^3
+data$crop_factor[data$CROPDMGEXP == "m"] <- 10^6
+data$crop_factor[data$CROPDMGEXP == "b"] <- 10^9
+
+# Now we can create the actual cost columns
+data$prop_cost <- data$PROPDMG * data$prop_factor
+data$crop_cost <- data$CROPDMG * data$crop_factor
+```
+## Results
+
+In this section I will analyse the data and present the answer to the two questions
+### Events that are most harmful with respect to population health
+I will start by calculating the total injuries and fatalities
+```{r}
+Total_injurie <- data %>%
+                  group_by(EVTYPE) %>%
+                  summarise(INJURIES = sum(INJURIES), FATALITIES = sum(FATALITIES), total_injurie = INJURIES + FATALITIES) %>%
+                  arrange(desc(total_injurie))
+Total_injurie <- head(Total_injurie, 10)
+
+```
+In order to use the ggplot package, I need to melt the data
+
+```{r}
+inj_chart_data <- melt(Total_injurie, id.vars = "EVTYPE", variable.name = "Group")
+head(inj_chart_data)
+
+```
+
+Charting the data for a more visual inspaection
+
+```{r}
+ggplot(inj_chart_data, aes(x = reorder(EVTYPE, -value), y = value)) + 
+  geom_col(aes(fill = Group), position = 'dodge') +
+  ylab('Occurencies') +
+  xlab('Event Type') + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle('Top 10 harmfull events')
+
+  
+
+
+```
+### Events that have the greatest economic consequences
+I will start with calculating the total costs
+
+```{r}
+Total_cost <- data %>%
+              group_by(EVTYPE) %>%
+              summarise(prop_cost = sum(prop_cost), crop_cost = sum(crop_cost), total_cost = prop_cost + crop_cost) %>%
+              arrange(desc(total_cost))
+Total_cost <- head(Total_cost, 10)
+
+        
+```
+Again in order to easily visualise in ggplot I will melt the dataset
+
+```{r}
+cost_chart_data <- melt(Total_cost, id.vars = 'EVTYPE', variable.name = 'Group')
+head(cost_chart_data)
+```
+
+creating the chart for a more visual inspaection
+```{r}
+ggplot(cost_chart_data, aes(x = reorder(EVTYPE, -value), y = value)) + 
+  geom_col(aes(fill = Group), position = 'dodge') +
+  ylab('Cost') +
+  xlab('Event Type') + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle('Top 10 Economic harmfull events')
+
+
+```
